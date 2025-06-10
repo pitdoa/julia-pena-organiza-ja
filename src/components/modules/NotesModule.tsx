@@ -7,12 +7,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Note {
   id: string;
-  title: string;
+  subject_name: string;
+  professor_name: string;
   content: string;
-  createdAt: string;
+  created_at: string;
 }
 
 interface NotesModuleProps {
@@ -24,98 +26,179 @@ const NotesModule = ({ onBack }: NotesModuleProps) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const [newNote, setNewNote] = useState({
-    title: '',
+    subject_name: '',
+    professor_name: '',
     content: ''
   });
   const { toast } = useToast();
 
   useEffect(() => {
-    const savedNotes = localStorage.getItem('julia_notes');
-    if (savedNotes) {
-      setNotes(JSON.parse(savedNotes));
-    }
+    fetchNotes();
   }, []);
 
-  const saveNotes = (updatedNotes: Note[]) => {
-    setNotes(updatedNotes);
-    localStorage.setItem('julia_notes', JSON.stringify(updatedNotes));
+  const fetchNotes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('subject_notes')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setNotes(data || []);
+    } catch (error: any) {
+      toast({
+        title: "Erro ao carregar notas",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const addNote = () => {
-    if (!newNote.title || !newNote.content) {
+  const addNote = async () => {
+    if (!newNote.subject_name || !newNote.content) {
       toast({
         title: "Campos obrigatórios",
-        description: "Preencha o título e o conteúdo da nota",
+        description: "Preencha a matéria e o conteúdo da nota",
         variant: "destructive",
       });
       return;
     }
 
-    const note: Note = {
-      id: Date.now().toString(),
-      title: newNote.title,
-      content: newNote.content,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
 
-    const updatedNotes = [note, ...notes];
-    saveNotes(updatedNotes);
+      const { data, error } = await supabase
+        .from('subject_notes')
+        .insert([
+          {
+            user_id: user.id,
+            subject_name: newNote.subject_name,
+            professor_name: newNote.professor_name || null,
+            content: newNote.content
+          }
+        ])
+        .select()
+        .single();
 
-    setNewNote({ title: '', content: '' });
-    setIsDialogOpen(false);
+      if (error) throw error;
 
-    toast({
-      title: "Nota criada!",
-      description: "Sua anotação foi salva com sucesso ✨",
-    });
+      setNotes(prev => [data, ...prev]);
+      setNewNote({ subject_name: '', professor_name: '', content: '' });
+      setIsDialogOpen(false);
+
+      toast({
+        title: "Nota criada!",
+        description: "Sua anotação foi salva com sucesso ✨",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao criar nota",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
-  const updateNote = () => {
-    if (!editingNote || !newNote.title || !newNote.content) return;
+  const updateNote = async () => {
+    if (!editingNote || !newNote.subject_name || !newNote.content) return;
 
-    const updatedNotes = notes.map(note =>
-      note.id === editingNote.id
-        ? { ...note, title: newNote.title, content: newNote.content }
-        : note
-    );
+    try {
+      const { data, error } = await supabase
+        .from('subject_notes')
+        .update({
+          subject_name: newNote.subject_name,
+          professor_name: newNote.professor_name || null,
+          content: newNote.content
+        })
+        .eq('id', editingNote.id)
+        .select()
+        .single();
 
-    saveNotes(updatedNotes);
-    setEditingNote(null);
-    setNewNote({ title: '', content: '' });
-    setIsDialogOpen(false);
+      if (error) throw error;
 
-    toast({
-      title: "Nota atualizada!",
-      description: "Suas alterações foram salvas",
-    });
+      setNotes(prev => prev.map(note => 
+        note.id === editingNote.id ? data : note
+      ));
+
+      setEditingNote(null);
+      setNewNote({ subject_name: '', professor_name: '', content: '' });
+      setIsDialogOpen(false);
+
+      toast({
+        title: "Nota atualizada!",
+        description: "Suas alterações foram salvas",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao atualizar nota",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
-  const deleteNote = (id: string) => {
-    const updatedNotes = notes.filter(note => note.id !== id);
-    saveNotes(updatedNotes);
-    toast({
-      title: "Nota removida",
-      description: "A anotação foi excluída",
-    });
+  const deleteNote = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('subject_notes')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setNotes(prev => prev.filter(note => note.id !== id));
+      toast({
+        title: "Nota removida",
+        description: "A anotação foi excluída",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao remover nota",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   const openEditDialog = (note: Note) => {
     setEditingNote(note);
-    setNewNote({ title: note.title, content: note.content });
+    setNewNote({ 
+      subject_name: note.subject_name, 
+      professor_name: note.professor_name || '', 
+      content: note.content 
+    });
     setIsDialogOpen(true);
   };
 
   const openNewDialog = () => {
     setEditingNote(null);
-    setNewNote({ title: '', content: '' });
+    setNewNote({ subject_name: '', professor_name: '', content: '' });
     setIsDialogOpen(true);
   };
 
   const filteredNotes = notes.filter(note =>
-    note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    note.content.toLowerCase().includes(searchTerm.toLowerCase())
+    note.subject_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    note.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (note.professor_name && note.professor_name.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center space-x-4">
+          <Button onClick={onBack} variant="outline" className="border-purple-300 text-purple-700">
+            ← Voltar
+          </Button>
+          <div className="text-purple-600">Carregando notas...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -145,9 +228,15 @@ const NotesModule = ({ onBack }: NotesModuleProps) => {
             </DialogHeader>
             <div className="space-y-4">
               <Input
-                placeholder="Título da nota"
-                value={newNote.title}
-                onChange={(e) => setNewNote({...newNote, title: e.target.value})}
+                placeholder="Matéria"
+                value={newNote.subject_name}
+                onChange={(e) => setNewNote({...newNote, subject_name: e.target.value})}
+                className="border-purple-200 focus:border-purple-500"
+              />
+              <Input
+                placeholder="Professor (opcional)"
+                value={newNote.professor_name}
+                onChange={(e) => setNewNote({...newNote, professor_name: e.target.value})}
                 className="border-purple-200 focus:border-purple-500"
               />
               <Textarea
@@ -190,7 +279,12 @@ const NotesModule = ({ onBack }: NotesModuleProps) => {
           {filteredNotes.map((note) => (
             <Card key={note.id} className="p-4 border-purple-100 hover:shadow-lg transition-shadow">
               <div className="flex justify-between items-start mb-3">
-                <h3 className="font-semibold text-purple-800 truncate">{note.title}</h3>
+                <div>
+                  <h3 className="font-semibold text-purple-800 truncate">{note.subject_name}</h3>
+                  {note.professor_name && (
+                    <p className="text-sm text-purple-600">{note.professor_name}</p>
+                  )}
+                </div>
                 <Button
                   onClick={() => deleteNote(note.id)}
                   variant="outline"
@@ -207,7 +301,7 @@ const NotesModule = ({ onBack }: NotesModuleProps) => {
               
               <div className="flex justify-between items-center">
                 <span className="text-xs text-purple-500">
-                  {new Date(note.createdAt).toLocaleDateString('pt-BR')}
+                  {new Date(note.created_at).toLocaleDateString('pt-BR')}
                 </span>
                 <Button
                   onClick={() => openEditDialog(note)}

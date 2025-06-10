@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface LoginFormProps {
   onLogin: () => void;
@@ -14,31 +15,87 @@ const LoginForm = ({ onLogin }: LoginFormProps) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
   const { toast } = useToast();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Fixed credentials
-    if (email === 'juliapena002@gmail.com' && password === 'juliapena123') {
-      setTimeout(() => {
-        onLogin();
-        toast({
-          title: "Bem-vinda, Júlia!",
-          description: "Login realizado com sucesso ✨",
+    try {
+      if (isSignUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
         });
-        setIsLoading(false);
-      }, 1000);
-    } else {
-      setTimeout(() => {
-        toast({
-          title: "Credenciais inválidas",
-          description: "Verifique seu email e senha",
-          variant: "destructive",
+
+        if (error) throw error;
+
+        if (data.user) {
+          // Criar perfil da usuária
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .insert([
+              {
+                user_id: data.user.id,
+                email: data.user.email,
+                full_name: 'Júlia Pena',
+              }
+            ]);
+
+          if (profileError) {
+            console.error('Erro ao criar perfil:', profileError);
+          }
+
+          toast({
+            title: "Conta criada com sucesso!",
+            description: "Bem-vinda ao seu sistema de organização pessoal ✨",
+          });
+          onLogin();
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
         });
-        setIsLoading(false);
-      }, 1000);
+
+        if (error) throw error;
+
+        if (data.user) {
+          // Verificar se existe perfil, se não existir, criar
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('user_id', data.user.id)
+            .maybeSingle();
+
+          if (!profile && !profileError) {
+            await supabase
+              .from('profiles')
+              .insert([
+                {
+                  user_id: data.user.id,
+                  email: data.user.email,
+                  full_name: 'Júlia Pena',
+                }
+              ]);
+          }
+
+          toast({
+            title: "Bem-vinda de volta, Júlia!",
+            description: "Login realizado com sucesso ✨",
+          });
+          onLogin();
+        }
+      }
+    } catch (error: any) {
+      toast({
+        title: "Erro na autenticação",
+        description: error.message || "Verifique suas credenciais",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -56,7 +113,7 @@ const LoginForm = ({ onLogin }: LoginFormProps) => {
             <Input
               id="email"
               type="email"
-              placeholder="juliapena002@gmail.com"
+              placeholder="seu@email.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="border-purple-200 focus:border-purple-500 focus:ring-purple-500"
@@ -82,9 +139,18 @@ const LoginForm = ({ onLogin }: LoginFormProps) => {
             disabled={isLoading}
             className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg transition-all duration-200 transform hover:scale-105"
           >
-            {isLoading ? 'Entrando...' : 'Entrar'}
+            {isLoading ? (isSignUp ? 'Criando conta...' : 'Entrando...') : (isSignUp ? 'Criar Conta' : 'Entrar')}
           </Button>
         </form>
+
+        <div className="mt-6 text-center">
+          <button
+            onClick={() => setIsSignUp(!isSignUp)}
+            className="text-purple-600 hover:text-purple-700 text-sm"
+          >
+            {isSignUp ? 'Já tem conta? Faça login' : 'Não tem conta? Crie uma'}
+          </button>
+        </div>
 
         <div className="mt-6 text-center text-sm text-purple-600">
           <p>Sistema personalizado para organização e estudos</p>

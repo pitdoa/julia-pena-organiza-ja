@@ -6,13 +6,14 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Clock, Plus, Trash2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Habit {
   id: string;
-  name: string;
+  title: string;
   streak: number;
   lastCompleted: string | null;
-  createdAt: string;
+  created_at: string;
 }
 
 interface HabitsModuleProps {
@@ -23,21 +24,46 @@ const HabitsModule = ({ onBack }: HabitsModuleProps) => {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newHabitName, setNewHabitName] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    const savedHabits = localStorage.getItem('julia_habits');
-    if (savedHabits) {
-      setHabits(JSON.parse(savedHabits));
-    }
+    fetchHabits();
   }, []);
 
-  const saveHabits = (updatedHabits: Habit[]) => {
-    setHabits(updatedHabits);
-    localStorage.setItem('julia_habits', JSON.stringify(updatedHabits));
+  const fetchHabits = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('kanban_tasks')
+        .select('*')
+        .eq('category', 'crescimento')
+        .eq('repeats', true)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Transformar tarefas em hábitos para compatibilidade
+      const habitsData = (data || []).map(task => ({
+        id: task.id,
+        title: task.title,
+        streak: 0, // Será calculado baseado no histórico
+        lastCompleted: task.completed_at,
+        created_at: task.created_at
+      }));
+
+      setHabits(habitsData);
+    } catch (error: any) {
+      toast({
+        title: "Erro ao carregar hábitos",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const addHabit = () => {
+  const addHabit = async () => {
     if (!newHabitName.trim()) {
       toast({
         title: "Nome obrigatório",
@@ -47,67 +73,124 @@ const HabitsModule = ({ onBack }: HabitsModuleProps) => {
       return;
     }
 
-    const habit: Habit = {
-      id: Date.now().toString(),
-      name: newHabitName.trim(),
-      streak: 0,
-      lastCompleted: null,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
 
-    const updatedHabits = [...habits, habit];
-    saveHabits(updatedHabits);
+      const { data, error } = await supabase
+        .from('kanban_tasks')
+        .insert([
+          {
+            user_id: user.id,
+            title: newHabitName.trim(),
+            description: `Hábito: ${newHabitName.trim()}`,
+            category: 'crescimento',
+            status: 'começou',
+            repeats: true,
+            repeat_frequency: 'daily'
+          }
+        ])
+        .select()
+        .single();
 
-    setNewHabitName('');
-    setIsDialogOpen(false);
+      if (error) throw error;
 
-    toast({
-      title: "Hábito criado!",
-      description: "Agora é só manter a consistência ✨",
-    });
+      const newHabit: Habit = {
+        id: data.id,
+        title: data.title,
+        streak: 0,
+        lastCompleted: null,
+        created_at: data.created_at
+      };
+
+      setHabits(prev => [newHabit, ...prev]);
+      setNewHabitName('');
+      setIsDialogOpen(false);
+
+      toast({
+        title: "Hábito criado!",
+        description: "Agora é só manter a consistência ✨",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao criar hábito",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
-  const completeHabit = (id: string) => {
-    const today = new Date().toDateString();
+  const completeHabit = async (id: string) => {
+    const today = new Date().toISOString();
     
-    const updatedHabits = habits.map(habit => {
-      if (habit.id === id) {
-        const lastCompleted = habit.lastCompleted ? new Date(habit.lastCompleted).toDateString() : null;
-        
-        if (lastCompleted === today) {
-          // Já foi completado hoje
-          return habit;
+    try {
+      const { error } = await supabase
+        .from('kanban_tasks')
+        .update({
+          status: 'finalizou',
+          completed_at: today
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setHabits(prev => prev.map(habit => {
+        if (habit.id === id) {
+          const lastCompleted = habit.lastCompleted ? new Date(habit.lastCompleted).toDateString() : null;
+          const todayStr = new Date().toDateString();
+          
+          if (lastCompleted === todayStr) {
+            return habit; // Já foi completado hoje
+          }
+          
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const wasYesterday = lastCompleted === yesterday.toDateString();
+          
+          return {
+            ...habit,
+            streak: wasYesterday || habit.streak === 0 ? habit.streak + 1 : 1,
+            lastCompleted: today
+          };
         }
-        
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const wasYesterday = lastCompleted === yesterday.toDateString();
-        
-        return {
-          ...habit,
-          streak: wasYesterday || habit.streak === 0 ? habit.streak + 1 : 1,
-          lastCompleted: new Date().toISOString()
-        };
-      }
-      return habit;
-    });
+        return habit;
+      }));
 
-    saveHabits(updatedHabits);
-
-    toast({
-      title: "Parabéns! 🎉",
-      description: "Hábito completado hoje",
-    });
+      toast({
+        title: "Parabéns! 🎉",
+        description: "Hábito completado hoje",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao completar hábito",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
-  const deleteHabit = (id: string) => {
-    const updatedHabits = habits.filter(habit => habit.id !== id);
-    saveHabits(updatedHabits);
-    
-    toast({
-      title: "Hábito removido",
-      description: "O hábito foi excluído",
-    });
+  const deleteHabit = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('kanban_tasks')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setHabits(prev => prev.filter(habit => habit.id !== id));
+      
+      toast({
+        title: "Hábito removido",
+        description: "O hábito foi excluído",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao remover hábito",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   const isCompletedToday = (habit: Habit) => {
@@ -125,6 +208,19 @@ const HabitsModule = ({ onBack }: HabitsModuleProps) => {
     if (streak >= 3) return '🌟';
     return '💙';
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center space-x-4">
+          <Button onClick={onBack} variant="outline" className="border-purple-300 text-purple-700">
+            ← Voltar
+          </Button>
+          <div className="text-purple-600">Carregando hábitos...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -180,7 +276,7 @@ const HabitsModule = ({ onBack }: HabitsModuleProps) => {
           {habits.map((habit) => (
             <Card key={habit.id} className="p-6 border-purple-100 hover:shadow-lg transition-shadow">
               <div className="flex justify-between items-start mb-4">
-                <h3 className="font-semibold text-purple-800 truncate pr-2">{habit.name}</h3>
+                <h3 className="font-semibold text-purple-800 truncate pr-2">{habit.title}</h3>
                 <Button
                   onClick={() => deleteHabit(habit.id)}
                   variant="outline"
