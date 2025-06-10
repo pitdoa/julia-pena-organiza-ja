@@ -108,11 +108,8 @@ const LoginForm = ({ onLogin }: LoginFormProps) => {
       {/* Left Side - Brand */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-800 relative overflow-hidden">
         <div className="absolute inset-0 bg-black/20" />
-        <div className="relative z-10 flex flex-col justify-center items-center text-white p-12">
-          <div className="text-center space-y-6">
-            <div className="h-16 w-16 mx-auto rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <span className="text-2xl font-bold">JP</span>
-            </div>
+        <div className="relative z-10 flex flex-col justify-center items-start text-white p-12 pl-[15%]">
+        <div className="text-center space-y-6">
             <h1 className="text-4xl font-bold">{t('auth.title')}</h1>
             <p className="text-xl opacity-90 max-w-md">{t('auth.subtitle')}</p>
             <div className="pt-8">

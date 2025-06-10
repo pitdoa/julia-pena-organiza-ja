@@ -13,7 +13,7 @@ const translations = {
   pt: {
     // Auth
     'auth.title': 'Júlia Pena',
-    'auth.subtitle': 'Seu sistema de organização pessoal',
+    'auth.subtitle': 'Seja Bem-Vinda meu amor! Seu sistema de organização pessoal feito por Kauan',
     'auth.email': 'Email',
     'auth.password': 'Senha',
     'auth.login': 'Entrar',
