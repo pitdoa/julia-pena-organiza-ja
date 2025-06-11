@@ -1,4 +1,4 @@
-// Cole este código no editor do GitHub para o arquivo Dashboard.tsx
+// Em: src/components/Dashboard.tsx
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,18 +14,18 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { ChatInterface, Message } from './modules/aichat/ChatInterface';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { BookOpen, CheckCircle, Target, BookText, Calendar, ClipboardList, Repeat, Sparkles, StickyNote } from 'lucide-react';
+import { BookOpen, CheckSquare, Sparkles, BookText, Calendar, StickyNote, Repeat, ClipboardList, Target } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const StatCard = ({ icon, title, value, footer, isLoading }: { icon: React.ReactNode, title: string, value: string | number, footer: string, isLoading: boolean }) => (
-    <Card>
+// Componente para os cards de informações
+const InfoCard = ({ icon, title, children, isLoading }: { icon: React.ReactNode, title: string, children: React.ReactNode, isLoading: boolean }) => (
+    <Card className="h-full flex flex-col">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{title}</CardTitle>
             {icon}
         </CardHeader>
-        <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-1/2" /> : <div className="text-2xl font-bold">{value}</div>}
-            <p className="text-xs text-muted-foreground">{footer}</p>
+        <CardContent className="flex-grow">
+            {isLoading ? <Skeleton className="h-10 w-full" /> : <div className="text-sm font-semibold">{children}</div>}
         </CardContent>
     </Card>
 );
@@ -37,42 +37,91 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
   const [activeModule, setActiveModule] = useState<Module>('home');
   const [liveMessages, setLiveMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [dashboardStats, setDashboardStats] = useState({ habitsCompleted: 0, totalHabits: 6, activeTasks: 0, currentBook: null as { title: string } | null });
-  const [isStatsLoading, setIsStatsLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState({
+    todayEvents: [] as { title: string, event_time: string | null }[],
+    pendingHabits: [] as string[],
+    randomMessage: null as { message: string } | null,
+  });
+  const [isDataLoading, setIsDataLoading] = useState(true);
   const { toast } = useToast();
   const { t } = useLanguage();
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-        setIsStatsLoading(true);
+        setIsDataLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { setIsStatsLoading(false); return; }
-        const today = new Date().toISOString().split('T')[0];
+        if (!user) { setIsDataLoading(false); return; }
+
+        const today = new Date();
+        const todayISO = today.toISOString().split('T')[0];
+        const todayStart = new Date(today.setHours(0, 0, 0, 0)).toISOString();
+        const todayEnd = new Date(today.setHours(23, 59, 59, 999)).toISOString();
         
-        const { data: habits } = await supabase.from('daily_habits').select('tomou_creatina,leu_biblia,tomou_whey,treinou,rezou,estudou').eq('user_id', user.id).eq('date', today).maybeSingle();
-        let completedHabits = habits ? Object.values(habits).filter(v => v === true).length : 0;
-        const { count: tasksCount } = await supabase.from('kanban_tasks').select('*', { count: 'exact', head: true }).eq('user_id', user.id).in('status', ['começou', 'em_processo']);
-        const { data: book } = await supabase.from('reading_list').select('title').eq('user_id', user.id).eq('status', 'lendo').limit(1).maybeSingle();
-        setDashboardStats({ habitsCompleted, totalHabits: 6, activeTasks: tasksCount || 0, currentBook: book });
-        setIsStatsLoading(false);
+        const { data: todayEventsData } = await supabase.from('calendar_events').select('title, event_time').eq('user_id', user.id).eq('event_date', todayISO).order('event_time');
+        
+        const { data: allHabits } = await supabase.from('kanban_tasks').select('title, completed_at').eq('user_id', user.id).eq('repeats', true);
+        const pendingHabitsList = allHabits?.filter(habit => {
+            if (!habit.completed_at) return true;
+            const completedDate = new Date(habit.completed_at);
+            return completedDate < new Date(todayStart) || completedDate > new Date(todayEnd);
+        }).map(habit => habit.title) || [];
+
+        const { data: randomMsgData } = await supabase.rpc('get_random_juju_message');
+
+        setDashboardData({
+            todayEvents: todayEventsData || [],
+            pendingHabits: pendingHabitsList,
+            randomMessage: randomMsgData ? randomMsgData[0] : null
+        });
+        setIsDataLoading(false);
     };
 
-    if (activeModule === 'home') {
-        fetchDashboardData();
-    }
+    if (activeModule === 'home') { fetchDashboardData(); }
   }, [activeModule]);
-
-  const handleLiveSend = async (messageText: string) => {
-    const userMessage: Message = { isUser: true, text: messageText };
-    setLiveMessages(prev => [...prev, userMessage]);
+  
+  const handleLiveSend = async (messageText: string, imageFile?: File) => {
+    if (!messageText.trim() && !imageFile) return;
     setIsLoading(true);
+    let publicUrl: string | undefined = undefined;
+
+    if (imageFile) {
+        try {
+            const sanitizedFileName = imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const fileName = `${Date.now()}_${sanitizedFileName}`;
+            const { error: uploadError } = await supabase.storage.from('jujuimages').upload(fileName, imageFile);
+            if (uploadError) throw uploadError;
+            const { data: urlData } = supabase.storage.from('jujuimages').getPublicUrl(fileName);
+            publicUrl = urlData.publicUrl;
+        } catch (e: any) {
+            toast({ title: "Erro ao enviar imagem", description: e.message, variant: "destructive" });
+            setIsLoading(false);
+            return;
+        }
+    }
+
+    const userMessage: Message = { isUser: true, text: messageText, imageUrl: publicUrl };
+    setLiveMessages(prev => [...prev, userMessage]);
     try {
-      const { data, error } = await supabase.functions.invoke('juju-ai', { body: { message: messageText } });
+      // AQUI ESTÁ A MUDANÇA: Enviando a data de hoje para a função da IA
+      const todayISOForAI = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase.functions.invoke('juju-ai', {
+        body: {
+          message: messageText,
+          imageUrl: publicUrl,
+          date: todayISOForAI // <-- NOVO: Enviando a data!
+        }
+      });
+      
       if (error || data.error) throw new Error(error?.message || data.error);
-      const aiResponse: Message = { isUser: false, text: data.response };
+      const correctedText = data.response.replace(/([.?!])\s{2,}/g, '$1 ');
+      const aiResponse: Message = { isUser: false, text: correctedText };
       setLiveMessages(prev => [...prev, aiResponse]);
+      
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) await supabase.from('juju_conversations').insert({ message: messageText, response: data.response, user_id: user.id });
+      if (user) {
+        const messageToSave = JSON.stringify({ text: messageText, imageUrl: publicUrl });
+        await supabase.from('juju_conversations').insert({ message: messageToSave, response: data.response, user_id: user.id });
+      }
     } catch (e: any) {
       toast({ title: "Erro ao falar com a Juju", description: e.message, variant: "destructive" });
       setLiveMessages(prev => prev.slice(0, -1));
@@ -101,15 +150,29 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       default:
         return (
           <div className="space-y-8 animate-fade-in">
-            <div className="space-y-1"><h1 className="text-2xl md:text-3xl font-bold text-foreground">Bom dia, Júlia! ✨</h1><p className="text-muted-foreground">Aqui está um resumo do seu progresso hoje.</p></div>
+            <div className="space-y-1"><h1 className="text-2xl md:text-3xl font-bold text-foreground">Bom dia, Júlia! ✨</h1><p className="text-muted-foreground">Aqui está um resumo dinâmico para te ajudar hoje.</p></div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <StatCard icon={<CheckCircle className="h-4 w-4 text-muted-foreground" />} title="Hábitos de Hoje" value={`${dashboardStats.habitsCompleted} de ${dashboardStats.totalHabits}`} footer="Continue assim!" isLoading={isStatsLoading} />
-              <StatCard icon={<Target className="h-4 w-4 text-muted-foreground" />} title="Tarefas Ativas" value={dashboardStats.activeTasks} footer="Foco nos objetivos!" isLoading={isStatsLoading} />
-              <StatCard icon={<BookOpen className="h-4 w-4 text-muted-foreground" />} title="Leitura Atual" value={dashboardStats.currentBook?.title || "Nenhuma"} footer="Um capítulo por dia." isLoading={isStatsLoading} />
+              <InfoCard icon={<Calendar className="h-4 w-4 text-muted-foreground" />} title="Compromissos de Hoje" isLoading={isDataLoading}>
+                {dashboardData.todayEvents.length > 0 ? (
+                    <ul className="space-y-2">{dashboardData.todayEvents.map((event, index) => (
+                        // AQUI ESTÁ A CORREÇÃO DA FORMATAÇÃO
+                    <li key={index} className="flex items-center">
+                        <span>{event.title}</span>
+                        {event.event_time && <span className="ml-2 text-primary font-bold">{event.event_time.substring(0, 5)}</span>}
+                    </li>
+                    ))}</ul>
+                ) : "Nenhum compromisso hoje."}
+              </InfoCard>
+              <InfoCard icon={<CheckSquare className="h-4 w-4 text-muted-foreground" />} title="Hábitos Pendentes" isLoading={isDataLoading}>
+                {dashboardData.pendingHabits.length > 0 ? dashboardData.pendingHabits.join(', ') : "Todos os hábitos completos! 🎉"}
+              </InfoCard>
+              <InfoCard icon={<Sparkles className="h-4 w-4 text-muted-foreground" />} title="Mensagem da Juju" isLoading={isDataLoading}>
+                <span className="italic">"{dashboardData.randomMessage?.message || 'Tenha um ótimo dia!'}"</span>
+              </InfoCard>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card className="lg:col-span-1 h-[500px] flex flex-col"><div className="p-4 border-b"><h3 className="font-semibold">Converse com a Juju</h3></div><ChatInterface messages={liveMessages} onSendMessage={handleLiveSend} isLoading={isLoading} /></Card>
-                <div className="lg:col-span-1 grid grid-cols-1 md:grid-cols-2 gap-6">{modules.map((module) => (<Card key={module.id} className="group p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setActiveModule(module.id)}><div className={`p-3 rounded-full ${module.color} mb-3`}><module.icon className="h-6 w-6" /></div><h3 className="text-md font-semibold">{module.name}</h3></Card>))}</div>
+                <div className="lg:col-span-1 grid grid-cols-1 md:grid-cols-2 gap-6">{modules.map((module) => (<Card key={module.id} className="group p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-xl transition-shadow" onClick={() => setActiveModule(module.id)}><div className={`p-3 rounded-full ${module.color} mb-3`}><module.icon className="h-6 w-6" /></div><h3 className="text-md font-semibold">{module.name}</h3></Card>))}</div>
             </div>
           </div>
         );
