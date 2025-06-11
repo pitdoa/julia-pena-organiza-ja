@@ -119,6 +119,6 @@ const HabitsModule = ({ onBack }: HabitsModuleProps) => {
        : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{habits.map((habit) => (<Card key={habit.id} className="p-6 border-purple-100 hover:shadow-lg transition-shadow flex flex-col justify-between"><div className="flex justify-between items-start mb-4"><h3 className="font-semibold text-purple-800 truncate pr-2">{habit.title}</h3><Button onClick={() => deleteHabit(habit.id)} variant="ghost" size="icon" className="h-8 w-8 text-destructive/70 flex-shrink-0"><Trash2 size={16} /></Button></div><div className="text-center my-4"><div className="text-4xl mb-2">{getStreakEmoji(habit.streak)}</div><div className="text-2xl font-bold text-purple-800">{habit.streak}</div><div className="text-sm text-purple-600">dias de sequência</div></div><Button onClick={() => completeHabit(habit)} disabled={isCompletedToday(habit)} className={`w-full ${isCompletedToday(habit) ? 'bg-green-500 hover:bg-green-600' : 'bg-primary hover:bg-primary/90'}`}>{isCompletedToday(habit) ? '✓ Feito Hoje' : 'Marcar como Feito'}</Button></Card>))}</div>}
     </div>
   );
-};
+};  
 
 export default HabitsModule;

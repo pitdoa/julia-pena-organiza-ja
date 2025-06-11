@@ -16,8 +16,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { BookOpen, CheckSquare, Sparkles, BookText, Calendar, StickyNote, Repeat, ClipboardList, Target } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { format } from 'date-fns'; // 1. Importar a função 'format'
 
-// Componente para os cards de informações
 const InfoCard = ({ icon, title, children, isLoading }: { icon: React.ReactNode, title: string, children: React.ReactNode, isLoading: boolean }) => (
     <Card className="h-full flex flex-col">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -46,77 +46,57 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
   const { toast } = useToast();
   const { t } = useLanguage();
 
+  const isSameUTCDate = (d1: Date, d2: Date): boolean => d1.getUTCFullYear() === d2.getUTCFullYear() && d1.getUTCMonth() === d2.getUTCMonth() && d1.getUTCDate() === d2.getUTCDate();
+
   useEffect(() => {
     const fetchDashboardData = async () => {
         setIsDataLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setIsDataLoading(false); return; }
 
-        const today = new Date();
-        const todayISO = today.toISOString().split('T')[0];
-        const todayStart = new Date(today.setHours(0, 0, 0, 0)).toISOString();
-        const todayEnd = new Date(today.setHours(23, 59, 59, 999)).toISOString();
+        // 2. AQUI ESTÁ A CORREÇÃO
+        const todayISO = format(new Date(), 'yyyy-MM-dd');
         
-        const { data: todayEventsData } = await supabase.from('calendar_events').select('title, event_time').eq('user_id', user.id).eq('event_date', todayISO).order('event_time');
-        
-        const { data: allHabits } = await supabase.from('kanban_tasks').select('title, completed_at').eq('user_id', user.id).eq('repeats', true);
-        const pendingHabitsList = allHabits?.filter(habit => {
-            if (!habit.completed_at) return true;
-            const completedDate = new Date(habit.completed_at);
-            return completedDate < new Date(todayStart) || completedDate > new Date(todayEnd);
-        }).map(habit => habit.title) || [];
+        const [eventsResult, habitsResult, randomMsgResult, todayConvosResult] = await Promise.all([
+            supabase.from('calendar_events').select('title, event_time').eq('user_id', user.id).eq('event_date', todayISO).order('event_time'),
+            supabase.from('kanban_tasks').select('title, completed_at').eq('user_id', user.id).eq('repeats', true),
+            supabase.rpc('get_random_juju_message'),
+            supabase.from('juju_conversations').select('message, response').eq('user_id', user.id).gte('created_at', `${todayISO}T00:00:00.000Z`).lte('created_at', `${todayISO}T23:59:59.999Z`).order('created_at', { ascending: true })
+        ]);
 
-        const { data: randomMsgData } = await supabase.rpc('get_random_juju_message');
+        const pendingHabitsList = habitsResult.data?.filter(h => !h.completed_at || !isSameUTCDate(new Date(h.completed_at), new Date())).map(h => h.title) || [];
+        setDashboardData({ todayEvents: eventsResult.data || [], pendingHabits: pendingHabitsList, randomMessage: randomMsgResult.data ? randomMsgResult.data[0] : null });
 
-        setDashboardData({
-            todayEvents: todayEventsData || [],
-            pendingHabits: pendingHabitsList,
-            randomMessage: randomMsgData ? randomMsgData[0] : null
-        });
+        if (todayConvosResult.data) {
+            const liveHistory = todayConvosResult.data.flatMap(d => { try { const p = JSON.parse(d.message); return [{isUser:true,text:p.text,imageUrl:p.imageUrl},{isUser:false,text:d.response}]} catch { return [{isUser:true,text:d.message},{isUser:false,text:d.response}]}});
+            setLiveMessages(liveHistory);
+        }
         setIsDataLoading(false);
     };
-
     if (activeModule === 'home') { fetchDashboardData(); }
   }, [activeModule]);
   
   const handleLiveSend = async (messageText: string, imageFile?: File) => {
-    if (!messageText.trim() && !imageFile) return;
+    if ((!messageText.trim() && !imageFile) || isLoading) return;
+    const userMessage: Message = { isUser: true, text: messageText };
+    setLiveMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     let publicUrl: string | undefined = undefined;
-
-    if (imageFile) {
-        try {
-            const sanitizedFileName = imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            const fileName = `${Date.now()}_${sanitizedFileName}`;
-            const { error: uploadError } = await supabase.storage.from('jujuimages').upload(fileName, imageFile);
-            if (uploadError) throw uploadError;
-            const { data: urlData } = supabase.storage.from('jujuimages').getPublicUrl(fileName);
-            publicUrl = urlData.publicUrl;
-        } catch (e: any) {
-            toast({ title: "Erro ao enviar imagem", description: e.message, variant: "destructive" });
-            setIsLoading(false);
-            return;
-        }
-    }
-
-    const userMessage: Message = { isUser: true, text: messageText, imageUrl: publicUrl };
-    setLiveMessages(prev => [...prev, userMessage]);
     try {
-      // AQUI ESTÁ A MUDANÇA: Enviando a data de hoje para a função da IA
-      const todayISOForAI = new Date().toISOString().split('T')[0];
-      const { data, error } = await supabase.functions.invoke('juju-ai', {
-        body: {
-          message: messageText,
-          imageUrl: publicUrl,
-          date: todayISOForAI // <-- NOVO: Enviando a data!
-        }
-      });
-      
+      if (imageFile) {
+        const sanitizedFileName = imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const fileName = `${Date.now()}_${sanitizedFileName}`;
+        const { error: uploadError } = await supabase.storage.from('jujuimages').upload(fileName, imageFile);
+        if (uploadError) throw new Error(`Falha no upload: ${uploadError.message}`);
+        const { data: urlData } = supabase.storage.from('jujuimages').getPublicUrl(fileName);
+        publicUrl = urlData.publicUrl;
+        setLiveMessages(prev => prev.map(msg => msg === userMessage ? { ...msg, imageUrl: publicUrl } : msg));
+      }
+      const { data, error } = await supabase.functions.invoke('juju-ai', { body: { message: messageText, imageUrl: publicUrl } });
       if (error || data.error) throw new Error(error?.message || data.error);
       const correctedText = data.response.replace(/([.?!])\s{2,}/g, '$1 ');
       const aiResponse: Message = { isUser: false, text: correctedText };
       setLiveMessages(prev => [...prev, aiResponse]);
-      
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const messageToSave = JSON.stringify({ text: messageText, imageUrl: publicUrl });
@@ -124,7 +104,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       }
     } catch (e: any) {
       toast({ title: "Erro ao falar com a Juju", description: e.message, variant: "destructive" });
-      setLiveMessages(prev => prev.slice(0, -1));
+      setLiveMessages(prev => prev.filter(msg => msg !== userMessage));
     } finally {
       setIsLoading(false);
     }
@@ -150,16 +130,15 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       default:
         return (
           <div className="space-y-8 animate-fade-in">
-            <div className="space-y-1"><h1 className="text-2xl md:text-3xl font-bold text-foreground">Bom dia, Júlia! ✨</h1><p className="text-muted-foreground">Aqui está um resumo dinâmico para te ajudar hoje.</p></div>
+            <div className="space-y-1"><h1 className="text-2xl md:text-3xl font-bold text-foreground">Seja bem-vinda, Julia! ✨</h1><p className="text-muted-foreground">Aqui está um resumo dinâmico para te ajudar hoje.</p></div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <InfoCard icon={<Calendar className="h-4 w-4 text-muted-foreground" />} title="Compromissos de Hoje" isLoading={isDataLoading}>
                 {dashboardData.todayEvents.length > 0 ? (
                     <ul className="space-y-2">{dashboardData.todayEvents.map((event, index) => (
-                        // AQUI ESTÁ A CORREÇÃO DA FORMATAÇÃO
-                    <li key={index} className="flex items-center">
-                        <span>{event.title}</span>
-                        {event.event_time && <span className="ml-2 text-primary font-bold">{event.event_time.substring(0, 5)}</span>}
-                    </li>
+                        <li key={index} className="flex items-center">
+                            <span>{event.title}</span>
+                            {event.event_time && <span className="ml-2 text-primary font-semibold">{`às ${event.event_time.substring(0, 5)}`}</span>}
+                        </li>
                     ))}</ul>
                 ) : "Nenhum compromisso hoje."}
               </InfoCard>
