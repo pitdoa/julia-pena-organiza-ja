@@ -218,15 +218,6 @@ const LoginForm = ({ onLogin }: LoginFormProps) => {
                   }
                 </Button>
               </form>
-
-              <div className="text-center">
-                <button
-                  onClick={() => setIsSignUp(!isSignUp)}
-                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  {isSignUp ? t('auth.hasAccount') : t('auth.noAccount')}
-                </button>
-              </div>
             </div>
           </Card>
         </div>
