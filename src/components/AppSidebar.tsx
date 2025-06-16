@@ -48,19 +48,19 @@ const AppSidebar = ({ activeModule, onModuleChange, onLogout }: AppSidebarProps)
     { id: 'habits', name: t('modules.habits'), icon: Repeat, color: 'text-green-500' },
     { id: 'actionPlan', name: t('modules.actionPlan'), icon: ClipboardList, color: 'text-red-500' },
     { id: 'notebook', name: t('modules.notebook'), icon: BookText, color: 'text-indigo-500' },
-    { id: 'juju', name: 'Histórico IA Juju', icon: Sparkles, color: 'text-pink-500' },
+    { id: 'juju', name: 'Histórico da Juju', icon: Sparkles, color: 'text-pink-500' },
   ];
 
   return (
     <Sidebar className="border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <SidebarHeader className="border-b px-6 py-4">
         <div className="flex items-center space-x-2">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
-            <span className="text-white font-bold text-sm">JP</span>
+          <div className="h-8 w-8 rounded-lg overflow-hidden flex items-center justify-center">
+            <img src="logo.jpg" alt="" />
           </div>
           <div>
             <h2 className="text-lg font-semibold text-foreground">Julia Pena</h2>
-            <p className="text-sm text-muted-foreground">Organization System</p>
+            <p className="text-sm text-muted-foreground">{new Date().toLocaleDateString()}</p>
           </div>
         </div>
       </SidebarHeader>
@@ -99,11 +99,6 @@ const AppSidebar = ({ activeModule, onModuleChange, onLogout }: AppSidebarProps)
           <div className="flex items-center justify-between">
             <Button variant="ghost" size="sm" onClick={toggleTheme} className="h-8 w-8 p-0">
               {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-            </Button>
-            
-            <Button variant="ghost" size="sm" onClick={() => setLanguage(language === 'pt' ? 'en' : 'pt')} className="h-8 px-2">
-              <Languages className="h-4 w-4 mr-1" />
-              {language.toUpperCase()}
             </Button>
           </div>
           

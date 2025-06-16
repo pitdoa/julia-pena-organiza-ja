@@ -141,15 +141,6 @@ const LoginForm = ({ onLogin }: LoginFormProps) => {
               >
                 {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setLanguage(language === 'pt' ? 'en' : 'pt')}
-                className="h-9 px-3"
-              >
-                <Languages className="h-4 w-4 mr-1" />
-                {language.toUpperCase()}
-              </Button>
             </div>
           </div>
 
@@ -173,7 +164,7 @@ const LoginForm = ({ onLogin }: LoginFormProps) => {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="julia@exemplo.com"
+                    placeholder="juliapena002@gmail.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="h-11 bg-background border-border focus:border-primary"

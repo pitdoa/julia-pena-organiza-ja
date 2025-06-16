@@ -130,7 +130,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       default:
         return (
           <div className="space-y-8 animate-fade-in">
-            <div className="space-y-1"><h1 className="text-2xl md:text-3xl font-bold text-foreground">Seja bem-vinda, Julia! ✨</h1><p className="text-muted-foreground">Aqui está um resumo dinâmico para te ajudar hoje.</p></div>
+            <div className="space-y-1"><h1 className="text-2xl md:text-3xl font-bold text-foreground">Seja bem-vinda, Meu Amor! ✨</h1><p className="text-muted-foreground">Aqui está um resumo dinâmico para te ajudar hoje.</p></div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <InfoCard icon={<Calendar className="h-4 w-4 text-muted-foreground" />} title="Compromissos de Hoje" isLoading={isDataLoading}>
                 {dashboardData.todayEvents.length > 0 ? (
@@ -150,7 +150,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
               </InfoCard>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="lg:col-span-1 h-[500px] flex flex-col"><div className="p-4 border-b"><h3 className="font-semibold">Converse com a Juju</h3></div><ChatInterface messages={liveMessages} onSendMessage={handleLiveSend} isLoading={isLoading} /></Card>
+                <Card className="lg:col-span-1 h-[500px] flex flex-col"><div className="p-4 border-b"><h3 className="font-semibold">Juju 💖</h3></div><ChatInterface messages={liveMessages} onSendMessage={handleLiveSend} isLoading={isLoading} /></Card>
                 <div className="lg:col-span-1 grid grid-cols-1 md:grid-cols-2 gap-6">{modules.map((module) => (<Card key={module.id} className="group p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-xl transition-shadow" onClick={() => setActiveModule(module.id)}><div className={`p-3 rounded-full ${module.color} mb-3`}><module.icon className="h-6 w-6" /></div><h3 className="text-md font-semibold">{module.name}</h3></Card>))}</div>
             </div>
           </div>
@@ -163,7 +163,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       <div className="min-h-screen flex w-full bg-background">
         <AppSidebar activeModule={activeModule} onModuleChange={setActiveModule} onLogout={onLogout} />
         <SidebarInset className="flex-1 relative">
-          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4"><SidebarTrigger className="-ml-1" /><div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Julia Pena</span>{activeModule !== 'home' && (<><span>/</span><span className="text-foreground">{modules.find(m => m.id === activeModule)?.name || 'Home'}</span></>)}</div></header>
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4"><SidebarTrigger className="-ml-1" /><div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Feito com todo amor para você, Meu Amor!</span>{activeModule !== 'home' && (<><span>/</span><span className="text-foreground">{modules.find(m => m.id === activeModule)?.name || 'Home'}</span></>)}</div></header>
           <main className="flex-1 p-6">{renderModule()}</main>
         </SidebarInset>
       </div>
